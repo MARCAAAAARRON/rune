@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Branches - {{ repo_name }} - Runestone{% endblock %}
+
+{% block nav_refs %}active{% endblock %}
+
+{% block branch_name %}
+{% match current_branch %}
+{% when Some with (branch) %}
+  {{ branch }}
+{% when None %}
+  [HEAD]
+{% endmatch %}
+{% endblock %}
+
+{% block content %}
+<style>
+    .refs-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+    }
+    .refs-title-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .refs-title {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--text);
+    }
+
+    .refs-section-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Branch Items List */
+    .branch-list {
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        margin-bottom: 28px;
+        overflow: hidden;
+    }
+    .branch-row {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-muted);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        transition: background-color 0.12s;
+    }
+    .branch-row:hover {
+        background-color: var(--surface-hover);
+    }
+    .branch-row:last-child {
+        border-bottom: none;
+    }
+
+    .branch-name-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }
+    .branch-name {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+    .branch-name:hover {
+        color: var(--accent-hover);
+    }
+
+    .branch-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+</style>
+
+<!-- Refs Toolbar -->
+<div class="refs-toolbar">
+    <div class="refs-title-group">
+        <h1 class="refs-title">Branches</h1>
+        <span class="commits-meta-badge" style="font-family: var(--font-mono); font-size: 12px; color: var(--muted); background-color: var(--surface); border: 1px solid var(--border); padding: 2px 8px; border-radius: var(--radius-sm);">
+            {{ local_branches.len() }} local &bull; {{ remote_branches.len() }} remote
+        </span>
+    </div>
+
+    <div>
+        {% match current_branch %}
+        {% when Some with (b) %}
+        <span class="tag tag-positive" style="font-size: 12px; padding: 3px 10px;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background-color: var(--positive); display: inline-block; margin-right: 6px;"></span>
+            Checked out: {{ b }}
+        </span>
+        {% when None %}
+        {% endmatch %}
+    </div>
+</div>
+
+<!-- Local Branches Section -->
+<div>
+    <h2 class="refs-section-title">
+        <span class="material-symbols-outlined" style="font-size: 16px;">terminal</span>
+        <span>Local Branches</span>
+    </h2>
+
+    <div class="branch-list" id="local-branches-list">
+        {% if local_branches.is_empty() %}
+        <div style="padding: 24px; text-align: center; color: var(--muted); font-size: 13px;">
+            No local branches found.
+        </div>
+        {% else %}
+        {% for branch in local_branches %}
+        <div class="branch-row" data-name="{{ branch|lower }}">
+            <div class="branch-name-group">
+                <span class="material-symbols-outlined" style="font-size: 18px; color: var(--muted);">fork_right</span>
+                <a href="/commits?branch={{ branch }}" class="branch-name" title="View commits on {{ branch }}">
+                    {{ branch }}
+                </a>
+
+                {% match current_branch %}
+                {% when Some with (b) %}
+                    {% if b == branch %}
+                    <span class="tag tag-positive" style="font-size: 10px;">HEAD</span>
+                    {% endif %}
+                {% when None %}
+                {% endmatch %}
+            </div>
+
+            <div class="branch-actions">
+                <button type="button" class="btn" onclick="copyText('{{ branch }}', 'Branch name')" title="Copy branch name">
+                    <span class="material-symbols-outlined" style="font-size: 14px;">content_copy</span>
+                    <span>Copy</span>
+                </button>
+                <a href="/commits?branch={{ branch }}" class="btn btn-primary" title="Browse commit history for {{ branch }}">
+                    <span>Commits</span>
+                    <span class="material-symbols-outlined" style="font-size: 14px;">arrow_forward</span>
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- Remote Tracking Branches Section -->
+<div>
+    <h2 class="refs-section-title">
+        <span class="material-symbols-outlined" style="font-size: 16px;">cloud</span>
+        <span>Remote Tracking Branches</span>
+    </h2>
+
+    <div class="branch-list" id="remote-branches-list">
+        {% if remote_branches.is_empty() %}
+        <div style="padding: 24px; text-align: center; color: var(--muted); font-size: 13px;">
+            No remote branches found.
+        </div>
+        {% else %}
+        {% for rb in remote_branches %}
+        <div class="branch-row" data-name="{{ rb.remote|lower }}/{{ rb.branch|lower }}">
+            <div class="branch-name-group">
+                <span class="material-symbols-outlined" style="font-size: 18px; color: var(--muted);">cloud_queue</span>
+                <a href="/commits?branch={{ rb.remote }}/{{ rb.branch }}" class="branch-name" title="View commits on {{ rb.remote }}/{{ rb.branch }}">
+                    {{ rb.remote }}/{{ rb.branch }}
+                </a>
+            </div>
+
+            <div class="branch-actions">
+                <button type="button" class="btn" onclick="copyText('{{ rb.remote }}/{{ rb.branch }}', 'Remote branch')" title="Copy remote branch name">
+                    <span class="material-symbols-outlined" style="font-size: 14px;">content_copy</span>
+                    <span>Copy</span>
+                </button>
+                <a href="/commits?branch={{ rb.remote }}/{{ rb.branch }}" class="btn btn-primary" title="Browse commits on {{ rb.remote }}/{{ rb.branch }}">
+                    <span>Commits</span>
+                    <span class="material-symbols-outlined" style="font-size: 14px;">arrow_forward</span>
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- Progressive Enhancement: Live Branch Search -->
+<script>
+    (function() {
+        var filterInput = document.getElementById('global-filter');
+        var localRows = document.querySelectorAll('#local-branches-list .branch-row');
+        var remoteRows = document.querySelectorAll('#remote-branches-list .branch-row');
+
+        if (filterInput) {
+            filterInput.placeholder = "Filter branches...";
+            filterInput.addEventListener('input', function() {
+                var q = this.value.trim().toLowerCase();
+                function filterSet(rows) {
+                    rows.forEach(function(row) {
+                        var name = row.getAttribute('data-name') || '';
+                        row.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+                    });
+                }
+                filterSet(localRows);
+                filterSet(remoteRows);
+            });
+        }
+    })();
+</script>
+{% endblock %}

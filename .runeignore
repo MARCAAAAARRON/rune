@@ -1,0 +1,9 @@
+# Ignored directories
+target/
+.rune/
+.git/
+node_modules/
+
+# Ignored files
+*.log
+*.exe

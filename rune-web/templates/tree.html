@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Files at {{ commit_hash[..7] }} - {{ repo_name }} - Runestone{% endblock %}
+
+{% block nav_tree %}active{% endblock %}
+
+{% block content %}
+<style>
+    .tree-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .tree-context {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .tree-title {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--text);
+    }
+    .breadcrumb-trail {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        padding: 4px 10px;
+        border-radius: var(--radius-sm);
+    }
+    .breadcrumb-item {
+        color: var(--muted);
+        transition: color 0.12s;
+    }
+    .breadcrumb-item:hover {
+        color: var(--text);
+    }
+    .breadcrumb-item.current {
+        color: var(--text);
+        font-weight: 600;
+    }
+    .breadcrumb-sep {
+        color: var(--subtle);
+        user-select: none;
+    }
+
+    .view-switcher {
+        display: inline-flex;
+        align-items: center;
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 2px;
+    }
+    .view-btn {
+        padding: 4px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        border-radius: 3px;
+        color: var(--muted);
+        transition: color 0.12s, background-color 0.12s;
+    }
+    .view-btn:hover {
+        color: var(--text);
+    }
+    .view-btn.active {
+        background-color: var(--raised);
+        color: var(--accent-hover);
+        font-weight: 600;
+    }
+
+    /* Tree Table */
+    .tree-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        text-align: left;
+    }
+    .tree-table th {
+        padding: 9px 16px;
+        background-color: var(--surface);
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        user-select: none;
+    }
+    .tree-table td {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border-muted);
+        vertical-align: middle;
+    }
+    .tree-row {
+        transition: background-color 0.12s;
+    }
+    .tree-row:hover {
+        background-color: var(--surface-hover);
+    }
+    .tree-row:last-child td {
+        border-bottom: none;
+    }
+
+    .tree-entry-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: var(--font-mono);
+        color: var(--text);
+        font-size: 13px;
+        transition: color 0.12s;
+    }
+    .tree-entry-link:hover {
+        color: var(--accent-hover);
+    }
+    .tree-entry-link.is-directory {
+        font-weight: 600;
+        color: var(--text);
+    }
+    .tree-entry-icon {
+        font-size: 18px;
+        color: var(--muted);
+    }
+    .tree-entry-icon.folder {
+        color: #e3b341;
+    }
+</style>
+
+<!-- Tree Header & Path Toolbar -->
+<div class="tree-header-bar">
+    <div class="tree-context">
+        <h1 class="tree-title">Files</h1>
+        
+        <!-- Interactive Breadcrumbs -->
+        <nav class="breadcrumb-trail" id="tree-breadcrumbs" data-hash="{{ commit_hash }}" data-path="{{ current_path }}" aria-label="Directory Breadcrumbs">
+            <a href="/commit/{{ commit_hash }}/tree" class="breadcrumb-item">root</a>
+            {% if !current_path.is_empty() %}
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-item current">{{ current_path }}</span>
+            {% endif %}
+        </nav>
+
+        <a href="/commit/{{ commit_hash }}/diff" class="sha-tag" title="View commit diff">
+            <span>commit {{ commit_hash[..7] }}</span>
+            <span class="material-symbols-outlined" style="font-size: 13px;">difference</span>
+        </a>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="commits-meta-badge" id="tree-count-badge" style="font-family: var(--font-mono); font-size: 12px; color: var(--muted); background-color: var(--surface); border: 1px solid var(--border); padding: 2px 8px; border-radius: var(--radius-sm);">
+            {{ entries.len() }} items
+        </span>
+        <div class="view-switcher">
+            <a href="/commit/{{ commit_hash }}/tree" class="view-btn active">Tree</a>
+            <a href="/commit/{{ commit_hash }}/diff" class="view-btn">Diff</a>
+        </div>
+    </div>
+</div>
+
+<!-- Tree File Listing Table -->
+<div class="panel">
+    <table class="tree-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th style="width: 120px; text-align: right;">Kind</th>
+            </tr>
+        </thead>
+        <tbody id="tree-tbody">
+            {% if entries.is_empty() %}
+            <tr>
+                <td colspan="2" style="text-align: center; padding: 40px; color: var(--muted);">
+                    This directory is empty.
+                </td>
+            </tr>
+            {% endif %}
+
+            {% for entry in entries %}
+            <tr class="tree-row" data-name="{{ entry.name|lower }}">
+                <td>
+                    {% if entry.name == ".." %}
+                    <a href="/commit/{{ commit_hash }}/tree/{{ entry.path }}" class="tree-entry-link">
+                        <span class="material-symbols-outlined tree-entry-icon" style="color: var(--muted);">arrow_upward</span>
+                        <span style="color: var(--muted);">.. (parent directory)</span>
+                    </a>
+                    {% else if entry.is_dir %}
+                    <a href="/commit/{{ commit_hash }}/tree/{{ entry.path }}" class="tree-entry-link is-directory">
+                        <span class="material-symbols-outlined tree-entry-icon folder">folder</span>
+                        <span>{{ entry.name }}/</span>
+                    </a>
+                    {% else %}
+                    <a href="/commit/{{ commit_hash }}/blob/{{ entry.path }}" class="tree-entry-link">
+                        <span class="material-symbols-outlined tree-entry-icon">description</span>
+                        <span>{{ entry.name }}</span>
+                    </a>
+                    {% endif %}
+                </td>
+                <td style="text-align: right; color: var(--muted); font-size: 12px; font-family: var(--font-mono);">
+                    {% if entry.name == ".." %}
+                    &mdash;
+                    {% else if entry.is_dir %}
+                    dir
+                    {% else %}
+                    file
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Progressive Enhancement: Segmented Breadcrumbs & Live Filter -->
+<script>
+    (function() {
+        // Expand breadcrumbs into segmented clickable links
+        var nav = document.getElementById('tree-breadcrumbs');
+        if (nav) {
+            var rawPath = nav.getAttribute('data-path') || '';
+            var hash = nav.getAttribute('data-hash') || '';
+            if (rawPath) {
+                var parts = rawPath.split('/').filter(Boolean);
+                if (parts.length > 0) {
+                    var html = '<a href="/commit/' + hash + '/tree" class="breadcrumb-item">root</a>';
+                    var accumulated = '';
+                    for (var i = 0; i < parts.length; i++) {
+                        accumulated += (i > 0 ? '/' : '') + parts[i];
+                        html += '<span class="breadcrumb-sep">/</span>';
+                        if (i === parts.length - 1) {
+                            html += '<span class="breadcrumb-item current">' + parts[i] + '</span>';
+                        } else {
+                            html += '<a href="/commit/' + hash + '/tree/' + accumulated + '" class="breadcrumb-item">' + parts[i] + '</a>';
+                        }
+                    }
+                    nav.innerHTML = html;
+                }
+            }
+        }
+
+        // Client-side quick filter
+        var filterInput = document.getElementById('global-filter');
+        var rows = document.querySelectorAll('#tree-tbody .tree-row');
+        var countBadge = document.getElementById('tree-count-badge');
+        var total = rows.length;
+
+        if (filterInput && rows.length > 0) {
+            filterInput.placeholder = "Filter files in directory...";
+            filterInput.addEventListener('input', function() {
+                var q = this.value.trim().toLowerCase();
+                var visible = 0;
+                rows.forEach(function(r) {
+                    var name = r.getAttribute('data-name') || '';
+                    if (!q || name.indexOf(q) !== -1 || name === '..') {
+                        r.style.display = '';
+                        visible++;
+                    } else {
+                        r.style.display = 'none';
+                    }
+                });
+                if (countBadge) {
+                    countBadge.textContent = q ? (visible + ' of ' + total + ' items') : (total + ' items');
+                }
+            });
+        }
+    })();
+</script>
+{% endblock %}

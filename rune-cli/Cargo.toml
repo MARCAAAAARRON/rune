@@ -1,0 +1,12 @@
+[package]
+name = "rune-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rune-core = { path = "../rune-core" }
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+rune-web = { path = "../rune-web" }
+color-eyre = "0.6.5"

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <!-- Runestone Background Tile -->
+  <rect width="32" height="32" rx="7" fill="#161b22" stroke="#30363d" stroke-width="1.2"/>
+  
+  <!-- Subtle Rune Stone Chiseled Backing Highlight -->
+  <path d="M10.5 6.5V25.5M10.5 7.8L19.5 13L10.5 18M10.5 18L19.5 25.5" stroke="#2ea043" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/>
+  
+  <!-- Precision Rune Glyph (Raido - Journey / Code Path) -->
+  <path d="M10.5 6.5V25.5M10.5 7.8L19.5 13L10.5 18M10.5 18L19.5 25.5" stroke="#3fb950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

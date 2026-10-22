@@ -1,0 +1,24 @@
+# Build targets and binaries
+/target
+*.pdb
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Rune VCS internal storage
+.rune/
+
+# Skill working directories & caches
+.taste-skill/
+
+# Backup and temp files
+**/*.rs.bk
+*.log
+*.tmp
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

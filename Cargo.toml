@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "rune-core",
+    "rune-cli"
+, "rune-web"]
+resolver = "2"

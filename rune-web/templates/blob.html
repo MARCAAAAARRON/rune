@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}{{ current_path }} at {{ commit_hash[..7] }} - {{ repo_name }} - Runestone{% endblock %}
+
+{% block nav_tree %}active{% endblock %}
+
+{% block content %}
+<style>
+    .blob-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .blob-context {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .breadcrumb-trail {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        padding: 4px 10px;
+        border-radius: var(--radius-sm);
+    }
+    .breadcrumb-item {
+        color: var(--muted);
+        transition: color 0.12s;
+    }
+    .breadcrumb-item:hover {
+        color: var(--text);
+    }
+    .breadcrumb-item.current {
+        color: var(--text);
+        font-weight: 600;
+    }
+    .breadcrumb-sep {
+        color: var(--subtle);
+        user-select: none;
+    }
+
+    .blob-meta-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Code Container */
+    .blob-code-container {
+        background-color: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+    .blob-code-header {
+        padding: 8px 16px;
+        background-color: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+    }
+    .blob-code-body {
+        display: flex;
+        overflow-x: auto;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.55;
+    }
+    .blob-gutter {
+        user-select: none;
+        text-align: right;
+        padding: 16px 12px 16px 16px;
+        color: var(--subtle);
+        border-right: 1px solid var(--border);
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        line-height: 1.55;
+        background-color: rgba(0, 0, 0, 0.2);
+    }
+    .blob-code-content {
+        padding: 16px;
+        flex: 1;
+        min-width: 0;
+        white-space: pre;
+    }
+    .blob-code-content pre {
+        margin: 0;
+        padding: 0;
+        background: transparent !important;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.55;
+    }
+
+    .empty-state-panel {
+        padding: 48px 24px;
+        text-align: center;
+        color: var(--muted);
+    }
+</style>
+
+<!-- Blob Header Bar -->
+<div class="blob-header-bar">
+    <div class="blob-context">
+        <!-- Interactive Breadcrumbs -->
+        <nav class="breadcrumb-trail" id="blob-breadcrumbs" data-hash="{{ commit_hash }}" data-path="{{ current_path }}" aria-label="File Breadcrumbs">
+            <a href="/commit/{{ commit_hash }}/tree" class="breadcrumb-item">root</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-item current">{{ current_path }}</span>
+        </nav>
+
+        <a href="/commit/{{ commit_hash }}/diff" class="sha-tag" title="View commit diff">
+            <span>commit {{ commit_hash[..7] }}</span>
+            <span class="material-symbols-outlined" style="font-size: 13px;">difference</span>
+        </a>
+    </div>
+
+    <div class="blob-meta-strip">
+        <button type="button" class="btn" onclick="copyText('{{ current_path }}', 'Path')" title="Copy relative path">
+            <span class="material-symbols-outlined" style="font-size: 14px;">link</span>
+            <span>Copy path</span>
+        </button>
+
+        <button type="button" class="btn" id="copy-code-btn" title="Copy raw file content">
+            <span class="material-symbols-outlined" style="font-size: 14px;">content_copy</span>
+            <span>Copy file</span>
+        </button>
+
+        <a href="/commit/{{ commit_hash }}/tree" class="btn" id="back-to-tree-btn">
+            <span class="material-symbols-outlined" style="font-size: 14px;">arrow_upward</span>
+            <span>Up to tree</span>
+        </a>
+    </div>
+</div>
+
+<!-- Code Viewing Panel -->
+<div class="blob-code-container">
+    <div class="blob-code-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-family: var(--font-mono); font-weight: 600; color: var(--text);">
+                {{ current_path.split("/").last().unwrap_or(current_path) }}
+            </span>
+            <span style="color: var(--muted);">&bull;</span>
+            <span style="font-family: var(--font-mono); color: var(--muted);">
+                {{ size_bytes }} bytes
+            </span>
+            <span id="line-count-span" style="color: var(--muted); display: none;"></span>
+        </div>
+
+        <div>
+            {% if is_binary %}
+            <span class="tag tag-warning">Binary</span>
+            {% else %}
+            <span class="tag tag-positive">Text</span>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if too_large %}
+    <div class="empty-state-panel">
+        <span class="material-symbols-outlined" style="font-size: 32px; color: var(--warning); margin-bottom: 8px; display: block;">warning</span>
+        <strong style="color: var(--text); font-size: 14px;">File too large to display</strong>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 4px;">This file exceeds the 2 MB display limit ({{ size_bytes }} bytes).</p>
+    </div>
+    {% else if is_binary %}
+    <div class="empty-state-panel">
+        <span class="material-symbols-outlined" style="font-size: 32px; color: var(--muted); margin-bottom: 8px; display: block;">dataset</span>
+        <strong style="color: var(--text); font-size: 14px;">Binary file not shown</strong>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 4px;">Cannot render binary content directly ({{ size_bytes }} bytes).</p>
+    </div>
+    {% else %}
+    <div class="blob-code-body">
+        <div class="blob-gutter" id="line-numbers-gutter"></div>
+        <div class="blob-code-content" id="blob-code-pre">
+            {{ highlighted_html|safe }}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Progressive Enhancement: Breadcrumbs, Line Numbers & Copy Helper -->
+<script>
+    (function() {
+        // Expand breadcrumbs into segmented clickable links
+        var nav = document.getElementById('blob-breadcrumbs');
+        if (nav) {
+            var rawPath = nav.getAttribute('data-path') || '';
+            var hash = nav.getAttribute('data-hash') || '';
+            if (rawPath) {
+                var parts = rawPath.split('/').filter(Boolean);
+                var html = '<a href="/commit/' + hash + '/tree" class="breadcrumb-item">root</a>';
+                var accumulated = '';
+                for (var i = 0; i < parts.length; i++) {
+                    accumulated += (i > 0 ? '/' : '') + parts[i];
+                    html += '<span class="breadcrumb-sep">/</span>';
+                    if (i === parts.length - 1) {
+                        html += '<span class="breadcrumb-item current">' + parts[i] + '</span>';
+                    } else {
+                        html += '<a href="/commit/' + hash + '/tree/' + accumulated + '" class="breadcrumb-item">' + parts[i] + '</a>';
+                    }
+                }
+                nav.innerHTML = html;
+
+                // Also update "Up to tree" link to point to immediate parent folder
+                if (parts.length > 1) {
+                    var parentPath = parts.slice(0, -1).join('/');
+                    var backBtn = document.getElementById('back-to-tree-btn');
+                    if (backBtn) {
+                        backBtn.href = '/commit/' + hash + '/tree/' + parentPath;
+                    }
+                }
+            }
+        }
+
+        // Generate line numbers gutter
+        var pre = document.querySelector('#blob-code-pre pre') || document.querySelector('#blob-code-pre');
+        var gutter = document.getElementById('line-numbers-gutter');
+        var lineCountSpan = document.getElementById('line-count-span');
+        
+        if (pre && gutter) {
+            var text = pre.textContent || '';
+            // Count lines
+            var lines = text.split('\n');
+            if (lines.length > 0 && lines[lines.length - 1] === '') {
+                lines.pop(); // drop trailing empty newline
+            }
+            var count = Math.max(1, lines.length);
+
+            var gutterHtml = '';
+            for (var i = 1; i <= count; i++) {
+                gutterHtml += i + '<br/>';
+            }
+            gutter.innerHTML = gutterHtml;
+
+            if (lineCountSpan) {
+                lineCountSpan.style.display = 'inline';
+                lineCountSpan.textContent = '• ' + count + ' lines';
+            }
+
+            // Hook up Copy file button
+            var copyBtn = document.getElementById('copy-code-btn');
+            if (copyBtn) {
+                copyBtn.addEventListener('click', function() {
+                    copyText(text, 'File content');
+                });
+            }
+        }
+    })();
+</script>
+{% endblock %}

@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block title %}Commits - {{ repo_name }} - Runestone{% endblock %}
+
+{% block nav_commits %}active{% endblock %}
+
+{% block branch_name %}
+{% match current_branch %}
+{% when Some with (branch) %}
+  {{ branch }}
+{% when None %}
+  [HEAD]
+{% endmatch %}
+{% endblock %}
+
+{% block content %}
+<style>
+    .commits-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .commits-title-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .commits-title {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--text);
+    }
+    .commits-meta-badge {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--muted);
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        padding: 2px 8px;
+        border-radius: var(--radius-sm);
+    }
+
+    /* Commits Table */
+    .commits-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        text-align: left;
+    }
+    .commits-table th {
+        padding: 9px 14px;
+        background-color: var(--surface);
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        user-select: none;
+    }
+    .commits-table td {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-muted);
+        vertical-align: middle;
+    }
+    .commit-row {
+        transition: background-color 0.12s;
+    }
+    .commit-row:hover {
+        background-color: var(--surface-hover);
+    }
+    .commit-row:last-child td {
+        border-bottom: none;
+    }
+
+    .commit-msg-link {
+        color: var(--text);
+        font-weight: 500;
+        display: block;
+        max-width: 620px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: color 0.12s;
+    }
+    .commit-msg-link:hover {
+        color: var(--accent-hover);
+    }
+
+    .author-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+    }
+    .author-avatar {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background-color: var(--raised);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 10px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-transform: uppercase;
+    }
+
+    .date-cell {
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    .commit-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .icon-action-btn {
+        width: 26px;
+        height: 26px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        color: var(--muted);
+        border: 1px solid transparent;
+        transition: color 0.12s, background-color 0.12s, border-color 0.12s;
+    }
+    .icon-action-btn:hover {
+        color: var(--text);
+        background-color: var(--raised);
+        border-color: var(--border);
+    }
+
+    .pagination-bar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 24px;
+    }
+</style>
+
+<!-- Commits Toolbar -->
+<div class="commits-toolbar">
+    <div class="commits-title-group">
+        <h1 class="commits-title">Commits</h1>
+        <span class="commits-meta-badge" id="commit-count-badge">{{ commits.len() }} commits</span>
+        {% match current_branch %}
+        {% when Some with (b) %}
+        <span class="commits-meta-badge" style="color: var(--accent-hover);">branch: {{ b }}</span>
+        {% when None %}
+        {% endmatch %}
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="commits-meta-badge">Page {{ current_page }}</span>
+    </div>
+</div>
+
+<!-- Commits List Table Container -->
+<div class="panel">
+    <table class="commits-table" id="commits-table">
+        <thead>
+            <tr>
+                <th style="width: 100px;">Commit</th>
+                <th>Message</th>
+                <th style="width: 200px;">Author</th>
+                <th style="width: 170px;">Date</th>
+                <th style="width: 80px; text-align: right;">Browse</th>
+            </tr>
+        </thead>
+        <tbody id="commits-tbody">
+            {% if commits.is_empty() %}
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 40px; color: var(--muted);">
+                    No commits found in this branch or repository.
+                </td>
+            </tr>
+            {% endif %}
+
+            {% for commit in commits %}
+            <tr class="commit-row" data-message="{{ commit.message|lower }}" data-author="{{ commit.author|lower }}" data-hash="{{ commit.hash|lower }}">
+                <td>
+                    <button type="button" class="sha-tag" onclick="copyText('{{ commit.hash }}', 'Commit SHA')" title="Click to copy full hash ({{ commit.hash }})">
+                        <span>{{ commit.short_hash }}</span>
+                        <span class="material-symbols-outlined" style="font-size: 13px;">content_copy</span>
+                    </button>
+                </td>
+                <td>
+                    <a href="/commit/{{ commit.hash }}/diff" class="commit-msg-link" title="{{ commit.message }}">
+                        {{ commit.message }}
+                    </a>
+                </td>
+                <td>
+                    <div class="author-badge" title="{{ commit.author }}">
+                        <span class="author-avatar">{{ commit.author.chars().next().unwrap_or('?') }}</span>
+                        <span style="max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            {{ commit.author }}
+                        </span>
+                    </div>
+                </td>
+                <td class="date-cell">
+                    {{ commit.date_str }}
+                </td>
+                <td style="text-align: right;">
+                    <div class="commit-actions">
+                        <a href="/commit/{{ commit.hash }}/tree" class="icon-action-btn" title="Browse file tree at {{ commit.short_hash }}">
+                            <span class="material-symbols-outlined" style="font-size: 17px;">folder</span>
+                        </a>
+                        <a href="/commit/{{ commit.hash }}/diff" class="icon-action-btn" title="View diff for {{ commit.short_hash }}">
+                            <span class="material-symbols-outlined" style="font-size: 17px;">difference</span>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination Controls -->
+<div class="pagination-bar">
+    {% if has_prev %}
+    {% match current_branch %}
+    {% when Some with (b) %}
+    <a href="/commits?page={{ current_page - 1 }}&branch={{ b }}" class="btn">
+        <span class="material-symbols-outlined" style="font-size: 16px;">arrow_back</span>
+        <span>Newer commits</span>
+    </a>
+    {% when None %}
+    <a href="/commits?page={{ current_page - 1 }}" class="btn">
+        <span class="material-symbols-outlined" style="font-size: 16px;">arrow_back</span>
+        <span>Newer commits</span>
+    </a>
+    {% endmatch %}
+    {% endif %}
+
+    {% if has_next %}
+    {% match current_branch %}
+    {% when Some with (b) %}
+    <a href="/commits?page={{ current_page + 1 }}&branch={{ b }}" class="btn">
+        <span>Older commits</span>
+        <span class="material-symbols-outlined" style="font-size: 16px;">arrow_forward</span>
+    </a>
+    {% when None %}
+    <a href="/commits?page={{ current_page + 1 }}" class="btn">
+        <span>Older commits</span>
+        <span class="material-symbols-outlined" style="font-size: 16px;">arrow_forward</span>
+    </a>
+    {% endmatch %}
+    {% endif %}
+</div>
+
+<!-- Instant Client-Side Filter -->
+<script>
+    (function() {
+        var filterInput = document.getElementById('global-filter');
+        var rows = document.querySelectorAll('#commits-tbody .commit-row');
+        var countBadge = document.getElementById('commit-count-badge');
+        var totalRows = rows.length;
+
+        if (filterInput && rows.length > 0) {
+            filterInput.placeholder = "Filter commits on this page...";
+            filterInput.addEventListener('input', function() {
+                var q = this.value.trim().toLowerCase();
+                var visibleCount = 0;
+                rows.forEach(function(row) {
+                    var msg = row.getAttribute('data-message') || '';
+                    var author = row.getAttribute('data-author') || '';
+                    var hash = row.getAttribute('data-hash') || '';
+                    if (!q || msg.indexOf(q) !== -1 || author.indexOf(q) !== -1 || hash.indexOf(q) !== -1) {
+                        row.style.display = '';
+                        visibleCount++;
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+                if (countBadge) {
+                    countBadge.textContent = q ? (visibleCount + ' of ' + totalRows + ' commits') : (totalRows + ' commits');
+                }
+            });
+        }
+    })();
+</script>
+{% endblock %}

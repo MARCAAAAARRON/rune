@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Commit {{ commit_hash[..7] }} - {{ repo_name }} - Runestone{% endblock %}
+
+{% block nav_commits %}active{% endblock %}
+
+{% block content %}
+<style>
+    .diff-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
+    .diff-title-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .diff-title {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--text);
+    }
+
+    .diff-summary-card {
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 12px 16px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+    .diff-summary-text {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+    }
+    .diff-file-index {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .diff-index-pill {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+        background-color: var(--raised);
+        border: 1px solid var(--border);
+        padding: 2px 7px;
+        border-radius: var(--radius-sm);
+        transition: color 0.12s, border-color 0.12s;
+    }
+    .diff-index-pill:hover {
+        color: var(--text);
+        border-color: var(--accent-hover);
+    }
+
+    /* File Diff Card */
+    .file-diff-card {
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .file-diff-header {
+        padding: 10px 16px;
+        background-color: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .file-diff-path {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    /* Diff Lines Table */
+    .diff-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.5;
+        background-color: var(--code-bg);
+    }
+    .diff-table td {
+        padding: 1px 0;
+        vertical-align: top;
+    }
+    .diff-sign-cell {
+        width: 32px;
+        text-align: center;
+        user-select: none;
+        color: var(--subtle);
+        border-right: 1px solid var(--border-muted);
+    }
+    .diff-content-cell {
+        padding: 1px 12px;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    /* Diff Row Colors - Clean and Authentic */
+    .diff-row-insert {
+        background-color: var(--positive-bg);
+        color: var(--positive);
+    }
+    .diff-row-insert .diff-sign-cell {
+        background-color: var(--positive-bg);
+        color: var(--positive);
+        font-weight: bold;
+    }
+    .diff-row-delete {
+        background-color: var(--negative-bg);
+        color: var(--negative);
+    }
+    .diff-row-delete .diff-sign-cell {
+        background-color: var(--negative-bg);
+        color: var(--negative);
+        font-weight: bold;
+    }
+    .diff-row-equal {
+        color: var(--text);
+    }
+
+    .diff-empty-msg {
+        padding: 32px 16px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 13px;
+    }
+</style>
+
+<!-- Diff Header Bar -->
+<div class="diff-header-bar">
+    <div class="diff-title-group">
+        <h1 class="diff-title">Commit {{ commit_hash[..7] }}</h1>
+        <button type="button" class="sha-tag" onclick="copyText('{{ commit_hash }}', 'Commit SHA')" title="Click to copy full hash ({{ commit_hash }})">
+            <span>{{ commit_hash[..7] }}</span>
+            <span class="material-symbols-outlined" style="font-size: 13px;">content_copy</span>
+        </button>
+
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted);">
+            <span>Parent:</span>
+            {% if let Some(parent) = parent_hash %}
+            <a href="/commit/{{ parent }}/diff" class="sha-tag" style="color: var(--muted);">
+                <span>{{ parent[..7] }}</span>
+            </a>
+            {% else %}
+            <span style="font-family: var(--font-mono); font-size: 12px; color: var(--subtle);">initial commit</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="view-switcher" style="display: inline-flex; align-items: center; background-color: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px;">
+        <a href="/commit/{{ commit_hash }}/diff" class="view-btn active" style="padding: 4px 12px; font-size: 12px; font-weight: 600; border-radius: 3px; background-color: var(--raised); color: var(--accent-hover);">Diff</a>
+        <a href="/commit/{{ commit_hash }}/tree" class="view-btn" style="padding: 4px 12px; font-size: 12px; font-weight: 500; border-radius: 3px; color: var(--muted);">Tree</a>
+    </div>
+</div>
+
+<!-- Summary & File Index Card -->
+<div class="diff-summary-card">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <span class="material-symbols-outlined" style="color: var(--accent-hover); font-size: 18px;">analytics</span>
+        <span class="diff-summary-text">{{ summary_message }}</span>
+    </div>
+
+    {% if !diffs.is_empty() %}
+    <div class="diff-file-index">
+        {% for file_diff in diffs %}
+        <a href="#diff-file-{{ loop.index }}" class="diff-index-pill" title="Jump to {{ file_diff.path }}">
+            {{ file_diff.path.split("/").last().unwrap_or(file_diff.path) }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- File Diff Listings -->
+<div class="diffs-container">
+    {% if diffs.is_empty() %}
+    <div class="panel">
+        <div class="diff-empty-msg">
+            No file changes recorded for this commit.
+        </div>
+    </div>
+    {% endif %}
+
+    {% for file_diff in diffs %}
+    <div class="file-diff-card" id="diff-file-{{ loop.index }}">
+        <div class="file-diff-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                {% if file_diff.status == "Added" %}
+                <span class="tag tag-positive">Added</span>
+                {% else if file_diff.status == "Deleted" %}
+                <span class="tag tag-negative">Deleted</span>
+                {% else %}
+                <span class="tag" style="background-color: var(--raised); color: var(--text); border: 1px solid var(--border);">Modified</span>
+                {% endif %}
+
+                <span class="file-diff-path">{{ file_diff.path }}</span>
+            </div>
+
+            <div>
+                <a href="/commit/{{ commit_hash }}/blob/{{ file_diff.path }}" class="btn" title="View complete file content">
+                    <span class="material-symbols-outlined" style="font-size: 14px;">visibility</span>
+                    <span>View file</span>
+                </a>
+            </div>
+        </div>
+
+        <div>
+            {% if file_diff.too_large %}
+            <div class="diff-empty-msg">
+                <span class="material-symbols-outlined" style="font-size: 24px; color: var(--warning); display: block; margin-bottom: 6px;">warning</span>
+                <strong>Diff too large to display</strong>
+                <p style="font-size: 12px; margin-top: 4px;">This file diff exceeds the maximum rendering limit.</p>
+            </div>
+            {% else if file_diff.is_binary %}
+            <div class="diff-empty-msg">
+                <span class="material-symbols-outlined" style="font-size: 24px; color: var(--muted); display: block; margin-bottom: 6px;">dataset</span>
+                <strong>Binary files differ</strong>
+                <p style="font-size: 12px; margin-top: 4px;">Binary file differences cannot be displayed as text.</p>
+            </div>
+            {% else %}
+            <div style="overflow-x: auto;">
+                <table class="diff-table">
+                    <tbody>
+                        {% for line in file_diff.lines %}
+                        {% if line.sign == "+" %}
+                        <tr class="diff-row-insert">
+                            <td class="diff-sign-cell">+</td>
+                            <td class="diff-content-cell">{{ line.content }}</td>
+                        </tr>
+                        {% else if line.sign == "-" %}
+                        <tr class="diff-row-delete">
+                            <td class="diff-sign-cell">-</td>
+                            <td class="diff-content-cell">{{ line.content }}</td>
+                        </tr>
+                        {% else %}
+                        <tr class="diff-row-equal">
+                            <td class="diff-sign-cell"> </td>
+                            <td class="diff-content-cell">{{ line.content }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
