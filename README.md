@@ -1,6 +1,10 @@
 # Rune VCS
 
-Rune is a distributed Version Control System (VCS) written in Rust. Inspired by Git's content-addressable data model, Rune is architected specifically for safety, strict path sandboxing, and direct serverless cloud object storage—eliminating the need to maintain dedicated server infrastructure.
+[![CI](https://github.com/MARCAAAAARRON/rune/actions/workflows/ci.yml/badge.svg)](https://github.com/MARCAAAAARRON/rune/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+
+Rune is a distributed Version Control System (VCS) written in Rust. Inspired by Git's content-addressable Merkle DAG model, Rune is architected specifically for memory safety, strict path sandboxing, and direct serverless cloud object storage—eliminating the need to deploy or maintain dedicated server infrastructure.
 
 > [!NOTE]
 > Rune is a standalone VCS with its own content-addressable storage format. It is **not** interoperable with standard Git repositories, remotes, or tooling.
@@ -29,13 +33,13 @@ Rune is a distributed Version Control System (VCS) written in Rust. Inspired by 
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/rune.git
+git clone https://github.com/MARCAAAAARRON/rune.git
 cd rune
 
 # Build release binaries
 cargo build --release
 
-# Optional: Install rune-cli to your local cargo bin path
+# Install rune-cli to your local cargo bin path
 cargo install --path rune-cli
 ```
 
@@ -45,7 +49,7 @@ cargo install --path rune-cli
 # 1. Initialize a repository in your current directory
 rune-cli init
 
-# 2. Stage files
+# 2. Stage files (supports .runeignore)
 rune-cli add src/main.rs
 rune-cli add Cargo.toml
 
@@ -59,6 +63,10 @@ rune-cli checkout feature-auth
 # 5. Inspect commit log and diffs
 rune-cli log
 rune-cli diff <old-commit-hash> <new-commit-hash>
+
+# 6. Merge branches with 3-way LCA
+rune-cli checkout main
+rune-cli merge feature-auth
 ```
 
 ---
@@ -68,13 +76,13 @@ rune-cli diff <old-commit-hash> <new-commit-hash>
 | Command | Syntax | Description |
 |---|---|---|
 | `init` | `rune-cli init` | Initializes a new `.rune` repository in the current directory. |
-| `add` | `rune-cli add <path>` | Stages a file into the working index. |
+| `add` | `rune-cli add <path>` | Stages a file or directory into the working index. |
 | `commit` | `rune-cli commit -m "<msg>" [--author "<name <email>>"]` | Commits staged changes as a snapshot. |
 | `log` | `rune-cli log` | Displays chronological commit history for the current branch. |
 | `branch` | `rune-cli branch [name] [-d/--delete]` | Lists all branches, creates a new branch, or deletes an existing branch. |
 | `checkout` | `rune-cli checkout <target>` | Switches working tree and HEAD to a branch or commit hash. |
 | `diff` | `rune-cli diff <old-commit> <new-commit>` | Displays file-level and line-by-line diffs between two commits. |
-| `merge` | `rune-cli merge <branch>` | Merges specified branch into the current HEAD. |
+| `merge` | `rune-cli merge <branch>` | Merges specified branch into the current HEAD using 3-way LCA. |
 | `remote` | `rune-cli remote add <name> <url>` | Registers a remote repository alias (e.g., `origin` to a GCS bucket or directory). |
 | `remote` | `rune-cli remote list` | Lists all configured remote aliases and target endpoints. |
 | `push` | `rune-cli push <remote> <branch>` | Pushes branch refs and missing objects to the remote endpoint. |
@@ -119,43 +127,36 @@ Runestone provides an offline, zero-network, read-only browser UI to inspect rep
 ```bash
 rune-cli web --port 8080
 ```
-Then navigate to `http://127.0.0.1:8080` in your web browser. Runestone binds exclusively to `127.0.0.1` to enforce local security boundaries.
+Then navigate to `http://127.0.0.1:8080` in your web browser. Runestone binds exclusively to `127.0.0.1` and incorporates Host/Origin validation middleware to enforce local security boundaries and defeat DNS rebinding attacks.
 
 ---
 
-## Architecture Overview
+## Architecture & Design Decisions
 
-The Rune project is organized as a Cargo workspace with three primary crates:
+The Rune workspace is structured into three crates:
 
 ```
 RUNE/
-├── rune-core/       # Core VCS domain logic, storage engine, and protocols
-├── rune-cli/        # CLI interface and subcommand dispatch
+├── rune-core/       # Core VCS domain logic, storage engine, protocols, and algorithms
+├── rune-cli/        # Command-line interface and subcommand dispatcher
 └── rune-web/        # Runestone web server (Axum-based read-only browser UI)
 ```
 
-### Core Architecture Concepts
+### Architecture Decision Records (ADRs)
 
-- **Repository Layout (`.rune/`):**
-  - `objects/`: Content-addressable object store organized into 2-character prefix subdirectories (e.g. `objects/ab/cdef123...`).
-  - `refs/heads/`: Branch pointer files storing SHA-256 commit hashes.
-  - `index`: Binary-staged files metadata and tracked paths.
-  - `HEAD`: Symbolic reference or direct commit pointer.
-  - `config`: TOML configuration tracking remote aliases and repository settings.
-- **Object Model:**
-  - `Blob`: Raw file contents.
-  - `Tree`: Directory snapshots associating file names, file modes, and object hashes.
-  - `Commit`: Snapshot linking a root `Tree`, zero or more parent `Commit` hashes, author signature, timestamp, and commit message.
-- **Security Sandboxing:**
-  - Tree entries reject path separators (`/`, `\`) and relative traversal elements (`.`, `..`).
-  - Zstandard decompression applies strict maximum allocation guards to protect against decompression bomb attacks.
-  - Remote object fetching enforces SHA-256 validation before parsing the payload.
+Key architectural choices and constraints are documented as ADRs in [`docs/decisions/`](docs/decisions/README.md):
 
-For in-depth specifications and design records, see the documentation in [`docs/`](file:///c:/RUNE/docs):
-- [RUNE User Manual](file:///c:/RUNE/docs/rune_cli_manual.md)
-- [Runestone Web Manual](file:///c:/RUNE/docs/runestone_web_manual.md)
-- [Rune Technical Requirements (TRD)](file:///c:/RUNE/docs/Rune_TRD.md)
-- [Rune Product Requirements (PRD)](file:///c:/RUNE/docs/Rune_PRD.md)
+- [**ADR-001**](docs/decisions/ADR-001-content-addressed-storage-sha256-zstd.md): Content-Addressed Storage using SHA-256 and Zstandard Compression
+- [**ADR-002**](docs/decisions/ADR-002-serverless-object-storage-and-cas-concurrency.md): Serverless Remote Synchronization via GCS and Atomic CAS Preconditions
+- [**ADR-003**](docs/decisions/ADR-003-path-traversal-defense-and-tree-sandboxing.md): Path Traversal Defense and Strict Tree Sandboxing
+- [**ADR-004**](docs/decisions/ADR-004-offline-read-only-web-ui-runestone.md): Offline Read-Only Web Interface (Runestone) with Loopback Binding
+- [**ADR-005**](docs/decisions/ADR-005-three-way-merge-lca-and-myers-diff.md): Directed Acyclic Graph (DAG) 3-Way Merge with LCA and Myers Diffing
+
+For technical and product requirements, see the full documentation index in [`docs/README.md`](docs/README.md):
+- [RUNE User Manual](docs/rune_cli_manual.md)
+- [Runestone Web Manual](docs/runestone_web_manual.md)
+- [Rune Technical Requirements (TRD)](docs/Rune_TRD.md)
+- [Rune Product Requirements (PRD)](docs/Rune_PRD.md)
 
 ---
 
@@ -167,13 +168,29 @@ Run the full workspace test suite (including unit tests, adversarial security te
 # Run all workspace tests
 cargo test --workspace
 
-# Run tests with compiler warnings treated strictly
+# Run tests with strict compiler and linter checks
 cargo clippy --workspace --all-targets
+
+# Check code formatting
+cargo fmt --all -- --check
 ```
+
+### Test Suite Breakdown
+
+- **`rune-core` integration tests:** Verify full end-to-end commit, branch, checkout, and ignore flows.
+- **`rune-core` adversarial tests:** Verify path traversal rejection, symlink escape rejection, hash mismatch detection, and decompression bomb protection.
+- **`rune-core` concurrency tests:** Verify Compare-and-Swap (CAS) race-condition prevention across simultaneous pushes.
+- **`rune-core` property tests (`proptest`):** Verify 3-way merge correctness, merge base identification, and Myers diffing.
+- **`rune-web` adversarial tests:** Verify Host/Origin header validation against DNS rebinding, URL-encoded path traversal rejection, and oversized blob protections.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on code style, testing requirements, and the ADR process for proposing architectural changes.
 
 ---
 
 ## License
 
 Licensed under the MIT License. See [LICENSE](LICENSE) for details.
-

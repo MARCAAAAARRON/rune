@@ -1,3 +1,16 @@
+//! # Rune Core Engine
+//!
+//! `rune-core` provides the fundamental domain logic, data models, and algorithms
+//! for the Rune distributed Version Control System.
+//!
+//! ## Key Subsystems
+//! - **Content-Addressed Storage (`codec`, `store`, `object`):** SHA-256 Merkle DAG with Zstandard compression.
+//! - **Staging & Tree Building (`index`, `tree_walk`):** Working directory staging and hierarchical tree serialization.
+//! - **Refs & Branch Management (`refs`):** Symbolic HEAD and branch ref pointers.
+//! - **Diff & Merge (`diff`, `merge`):** Myers file diffing and 3-way LCA merge resolution.
+//! - **Remote Synchronization (`remote`, `sync`):** Serverless push/pull backed by GCS and local directories.
+//! - **Path Traversal Sandboxing (`checkout`):** Strict path validation against directory escapes and symlink attacks.
+
 use std::path::Path;
 
 pub mod codec;
@@ -16,10 +29,25 @@ pub mod tree_walk;
 
 pub use checkout::{checkout, CheckoutError};
 
+/// Initializes an empty Rune repository in the specified directory.
+///
+/// Creates the `.rune/` directory structure, including `objects/`, `refs/heads/`,
+/// `refs/remotes/`, `HEAD` (defaulting to `refs/heads/main`), and initial `config`.
+///
+/// # Errors
+/// Returns [`error::InitError`] if repository creation fails or if `.rune` already exists.
 pub fn init<P: AsRef<Path>>(repo_path: P) -> Result<(), error::InitError> {
     store::init(repo_path)
 }
 
+/// Creates a new branch pointing to the current `HEAD` commit.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+/// * `name` - The name of the new branch (e.g. `"feature-auth"`).
+///
+/// # Errors
+/// Returns [`error::RefsError`] if `HEAD` cannot be resolved or if writing the ref fails.
 pub fn create_branch<P: AsRef<Path>>(repo_path: P, name: &str) -> Result<(), error::RefsError> {
     let repo_path = repo_path.as_ref();
     // Resolve HEAD to get the current commit
@@ -37,14 +65,36 @@ pub fn create_branch<P: AsRef<Path>>(repo_path: P, name: &str) -> Result<(), err
     Ok(())
 }
 
+/// Deletes an existing branch reference.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+/// * `name` - The name of the branch to delete.
+///
+/// # Errors
+/// Returns [`error::RefsError`] if the branch cannot be found or deleted.
 pub fn delete_branch<P: AsRef<Path>>(repo_path: P, name: &str) -> Result<(), error::RefsError> {
     Ok(refs::delete_ref(repo_path, name)?)
 }
 
+/// Lists all local branch names in the repository.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+///
+/// # Returns
+/// A vector of branch name strings.
 pub fn list_branches<P: AsRef<Path>>(repo_path: P) -> Result<Vec<String>, error::RefsError> {
     Ok(refs::list_refs(repo_path)?)
 }
 
+/// Stages a file or directory into the repository index.
+///
+/// When `target` is a directory, this walks the subtree recursively, respecting
+/// `.runeignore` and `.gitignore` patterns while automatically ignoring `.rune` and `.git`.
+///
+/// # Errors
+/// Returns [`error::AddError`] if file reading, hashing, or index saving fails.
 pub fn add<P: AsRef<Path>>(repo_path: P, target: P) -> Result<(), error::AddError> {
     let repo_path = repo_path.as_ref();
     let target = target.as_ref();
@@ -141,6 +191,24 @@ fn add_file(repo_path: &Path, file_path: &Path, index: &mut index::Index) -> Res
     Ok(())
 }
 
+/// Creates a new commit snapshot from the current staging index.
+///
+/// Builds hierarchical Merkle trees recursively from staged index entries,
+/// resolves the current parent commit from `HEAD`, creates the [`object::Commit`]
+/// object with author metadata and timestamp, writes it to the object store,
+/// and updates the active branch ref (or detached HEAD pointer).
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+/// * `message` - The commit message.
+/// * `author` - Author identity string (e.g. `"Name <email@example.com>"`).
+///
+/// # Returns
+/// The computed [`object::ObjectId`] (SHA-256) of the newly created commit.
+///
+/// # Errors
+/// Returns [`error::CommitError::NothingToCommit`] if the staging index has no entries,
+/// or an error if tree building or object store writes fail.
 pub fn commit<P: AsRef<Path>>(repo_path: P, message: &str, author: &str) -> Result<object::ObjectId, error::CommitError> {
     let repo_path = repo_path.as_ref();
     let index = index::Index::load(repo_path)?;
@@ -283,6 +351,19 @@ fn resolve_hash(repo_path: &Path, rev: &str) -> anyhow::Result<object::ObjectId>
     anyhow::bail!("Cannot resolve revision: {}", rev)
 }
 
+/// Computes the tree-level differences between two commits.
+///
+/// Resolves both commit revisions (branch name, commit hash, or `"HEAD"`),
+/// reads their respective root tree objects, and performs a recursive diff.
+/// Unchanged subtrees short-circuit execution when their hashes match.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+/// * `old_commit_hash` - Revision identifier for the base/older commit.
+/// * `new_commit_hash` - Revision identifier for the target/newer commit.
+///
+/// # Returns
+/// A [`diff::TreeDiff`] containing added, deleted, and modified paths.
 pub fn diff(repo_path: &Path, old_commit_hash: &str, new_commit_hash: &str) -> anyhow::Result<diff::TreeDiff> {
     use store::ObjectStore;
     use object::Object;
@@ -306,6 +387,21 @@ pub fn diff(repo_path: &Path, old_commit_hash: &str, new_commit_hash: &str) -> a
     Ok(tree_diff)
 }
 
+/// Merges changes from `other_branch` into the current `HEAD` using a 3-way LCA merge.
+///
+/// 1. Finds the Lowest Common Ancestor (LCA) between `HEAD` and `other_branch`.
+/// 2. Performs a 3-way merge on trees and blob hunks.
+/// 3. Writes auto-resolved files directly to the working tree.
+/// 4. If conflicting hunk edits occur, writes conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`)
+///    directly to the affected files in the working tree and returns an error notifying the user.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+/// * `other_branch` - Name or revision of the branch to merge in.
+///
+/// # Errors
+/// Returns an error if no common ancestor exists, if commits cannot be resolved,
+/// or if merge conflicts occur.
 pub fn merge(repo_path: &Path, other_branch: &str) -> anyhow::Result<()> {
     use store::ObjectStore;
     use merge::MergeError;
@@ -361,6 +457,17 @@ pub fn merge(repo_path: &Path, other_branch: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Retrieves the commit history starting from the current `HEAD` pointer.
+///
+/// Traverses the commit DAG backward following parent pointers using a visited set
+/// to prevent cycles or redundant visits across merge commits, returning commits
+/// sorted in reverse-chronological order.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+///
+/// # Returns
+/// A vector of `(ObjectId, Commit)` tuples sorted chronologically descending.
 pub fn log<P: AsRef<Path>>(repo_path: P) -> Result<Vec<(object::ObjectId, object::Commit)>, error::CommitError> {
     let repo_path = repo_path.as_ref();
     let head = refs::read_head(repo_path)?;
@@ -397,6 +504,14 @@ pub fn log<P: AsRef<Path>>(repo_path: P) -> Result<Vec<(object::ObjectId, object
     Ok(commits)
 }
 
+/// Retrieves the commit history starting from a specified reference or commit hash.
+///
+/// # Arguments
+/// * `repo_path` - Path to the root of the repository.
+/// * `ref_name` - Branch name or commit hash to begin traversal from.
+///
+/// # Returns
+/// A vector of `(ObjectId, Commit)` tuples sorted chronologically descending.
 pub fn log_from_ref<P: AsRef<Path>>(repo_path: P, ref_name: &str) -> Result<Vec<(object::ObjectId, object::Commit)>, error::CommitError> {
     let repo_path = repo_path.as_ref();
     let start_hash = resolve_hash(repo_path, ref_name).map_err(|_| error::CommitError::NothingToCommit)?;
